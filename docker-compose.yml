@@ -1,0 +1,120 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# ~/Projects/idp/docker-compose.yml
+#
+# Standalone Identity Provider stack.
+# Starts Keycloak 26 + its own Postgres database on a fixed Docker network
+# (idp-network) so other systems' compose files can join as an external network.
+#
+# Usage:
+#   cp .env.example .env && nano .env    # fill in real passwords
+#   docker compose up -d
+#   # First startup takes ~60 s while Keycloak imports the realm.
+#   # Visit http://localhost:8080/admin to verify.
+#
+# The realm-config/ directory is mounted read-only into Keycloak's import path.
+# Keycloak imports every *.json file once (on first startup) and skips import
+# on subsequent starts, so admin console changes persist in the DB volume.
+#
+# Browser-URL vs internal-URL — see README.md §5 for the full explanation.
+# Short version: JWT iss = http://localhost:8080/realms/idp-dev (KC_HOSTNAME).
+# Backend services inside Docker use http://keycloak:8080 for network calls
+# but validate tokens against the localhost:8080 issuer string.
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Keycloak backing database ─────────────────────────────────────────────
+  keycloak-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${KC_DB_NAME}
+      POSTGRES_USER:     ${KC_DB_USER}
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD}
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KC_DB_USER} -d ${KC_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - idp-network
+
+  # ── Keycloak ──────────────────────────────────────────────────────────────
+  keycloak:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      # ── Admin credentials (from .env) ─────────────────────────────────────
+      KC_BOOTSTRAP_ADMIN_USERNAME:          ${KC_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+
+      # ── Database (Postgres JDBC driver is bundled in KC 26) ───────────────
+      KC_DB:          postgres
+      KC_DB_URL:      jdbc:postgresql://keycloak-db:5432/${KC_DB_NAME}
+      KC_DB_USERNAME: ${KC_DB_USER}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+
+      # ── Hostname / URL — the split-horizon solution ───────────────────────
+      #
+      # KC_HOSTNAME is the public-facing URL used in:
+      #   • JWT `iss` (issuer) claims  ← must match what the BROWSER sees
+      #   • OIDC discovery document
+      #   • Browser login redirect targets
+      #
+      # We set it to the URL the BROWSER uses (localhost:8080 via port mapping).
+      #
+      # KC_HOSTNAME_STRICT=false lets Keycloak also accept requests arriving
+      # at http://keycloak:8080 — the Docker service name used by backend
+      # containers (Django, financial-system) for internal JWKS / token calls.
+      # Without this, those requests would be rejected as hostname mismatches.
+      #
+      # Net result:
+      #   iss claim  = http://localhost:8080/realms/idp-dev  (browser-reachable)
+      #   Internal   = http://keycloak:8080  (Docker DNS, no host routing)
+      #
+      # See README.md §5 for the full explanation and per-system config.
+      KC_HOSTNAME:        "http://localhost:8080"
+      KC_HOSTNAME_STRICT: "false"
+
+      KC_LOG_LEVEL: INFO
+
+      # DMS federation provider. Keycloak authenticates users by calling DMS;
+      # DMS remains the source of truth for identity, passwords, and roles.
+      DMS_INTERNAL_API_BASE_URL: ${DMS_INTERNAL_API_BASE_URL}
+      DMS_INTERNAL_IDP_API_KEY:  ${DMS_INTERNAL_IDP_API_KEY}
+
+    volumes:
+      # Realm config is mounted read-only. --import-realm scans this dir on
+      # every startup but only imports when the realm does not already exist.
+      - ./realm-config:/opt/keycloak/data/import:ro
+
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+    networks:
+      - idp-network
+
+# ── Network ───────────────────────────────────────────────────────────────────
+# `name: idp-network` gives this network a FIXED Docker name (no project-name
+# prefix). Without it, Compose would call it `idp_idp-network`, and any other
+# compose file joining it as `external: true` would need to know the directory
+# name. The fixed name removes that coupling entirely.
+networks:
+  idp-network:
+    name: idp-network
+    driver: bridge
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+# Fully independent from the IDM app database (postgres_data) and any future
+# financial-system database. Tearing down either app stack is safe.
+volumes:
+  keycloak_db_data:

@@ -1,0 +1,31 @@
+.env
+*.log
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Env & secrets
+.env
+.env.local
+*.pem
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
+build/
+out/
+
+# Logs
+*.log
+npm-debug.log*
