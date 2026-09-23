@@ -87,17 +87,30 @@
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
       "redirectUris": [
-        "http://localhost:3100/*",
-        "http://localhost:8100/*"
+        "http://localhost:3001/*",
+        "http://localhost:8001/*"
       ],
       "webOrigins": [
-        "http://localhost:3100",
-        "http://localhost:8100"
+        "http://localhost:3001",
+        "http://localhost:8001"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:3100/*##http://localhost:8100/*"
-      }
+        "post.logout.redirect.uris": "http://localhost:3001/*##http://localhost:8001/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "financial-live-authorization",
+          "protocol": "openid-connect",
+          "protocolMapper": "financial-live-authorization-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
 

@@ -83,8 +83,10 @@ services:
 
       KC_LOG_LEVEL: INFO
 
-      # DMS federation provider. Keycloak authenticates users by calling DMS;
-      # DMS remains the source of truth for identity, passwords, and roles.
+      # Financial system is the identity backend (lookup, passwords, write-through).
+      FINANCIAL_INTERNAL_API_BASE_URL: ${FINANCIAL_INTERNAL_API_BASE_URL}
+      FINANCIAL_INTERNAL_IDP_API_KEY:  ${FINANCIAL_INTERNAL_IDP_API_KEY}
+      # DMS mapper is claims-only (dms_role / permissions). Separate secret.
       DMS_INTERNAL_API_BASE_URL: ${DMS_INTERNAL_API_BASE_URL}
       DMS_INTERNAL_IDP_API_KEY:  ${DMS_INTERNAL_IDP_API_KEY}
 

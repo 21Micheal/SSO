@@ -12,23 +12,11 @@ import org.keycloak.storage.StorageId;
 import org.keycloak.storage.adapter.AbstractUserAdapterFederatedStorage;
 
 final class DmsUserAdapter extends AbstractUserAdapterFederatedStorage {
-    private final DmsClient dms;
     private final DmsUser dmsUser;
-    private String username;
-    private String email;
-    private String firstName;
-    private String lastName;
-    private boolean enabled;
 
-    DmsUserAdapter(KeycloakSession session, RealmModel realm, ComponentModel model, DmsClient dms, DmsUser dmsUser) {
+    DmsUserAdapter(KeycloakSession session, RealmModel realm, ComponentModel model, DmsUser dmsUser) {
         super(session, realm, model);
-        this.dms = dms;
         this.dmsUser = dmsUser;
-        this.username = dmsUser.username();
-        this.email = dmsUser.email();
-        this.firstName = dmsUser.firstName();
-        this.lastName = dmsUser.lastName();
-        this.enabled = dmsUser.enabled();
     }
 
     DmsUser dmsUser() {
@@ -42,58 +30,52 @@ final class DmsUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public String getUsername() {
-        return username;
+        return dmsUser.username();
     }
 
     @Override
     public void setUsername(String username) {
-        setEmail(username);
-        this.username = username;
+        throw new UnsupportedOperationException("DMS users are read-only in Keycloak.");
     }
 
     @Override
     public String getEmail() {
-        return email;
+        return dmsUser.email();
     }
 
     @Override
     public void setEmail(String email) {
-        DmsUser updated = dms.updateUser(dmsUser.id(), Map.of("email", email));
-        this.email = updated.email();
-        this.username = updated.username();
+        throw new UnsupportedOperationException("DMS users are read-only in Keycloak.");
     }
 
     @Override
     public String getFirstName() {
-        return firstName;
+        return dmsUser.firstName();
     }
 
     @Override
     public void setFirstName(String firstName) {
-        DmsUser updated = dms.updateUser(dmsUser.id(), Map.of("first_name", firstName == null ? "" : firstName));
-        this.firstName = updated.firstName();
+        throw new UnsupportedOperationException("DMS users are read-only in Keycloak.");
     }
 
     @Override
     public String getLastName() {
-        return lastName;
+        return dmsUser.lastName();
     }
 
     @Override
     public void setLastName(String lastName) {
-        DmsUser updated = dms.updateUser(dmsUser.id(), Map.of("last_name", lastName == null ? "" : lastName));
-        this.lastName = updated.lastName();
+        throw new UnsupportedOperationException("DMS users are read-only in Keycloak.");
     }
 
     @Override
     public boolean isEnabled() {
-        return enabled;
+        return dmsUser.enabled();
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        DmsUser updated = dms.updateUser(dmsUser.id(), Map.of("enabled", enabled));
-        this.enabled = updated.enabled();
+        throw new UnsupportedOperationException("DMS users are read-only in Keycloak.");
     }
 
     @Override

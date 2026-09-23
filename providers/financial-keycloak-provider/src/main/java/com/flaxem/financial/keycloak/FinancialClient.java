@@ -1,4 +1,4 @@
-package com.flaxem.dms.keycloak;
+package com.flaxem.financial.keycloak;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -11,39 +11,37 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Claims-only client. Identity (passwords, user creation) lives in the financial system.
- */
-final class DmsClient {
+final class FinancialClient {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final HttpClient http;
     private final String baseUrl;
     private final String apiKey;
 
-    DmsClient(String baseUrl, String apiKey) {
+    FinancialClient(String baseUrl, String apiKey) {
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
         this.baseUrl = stripTrailingSlash(baseUrl);
         this.apiKey = apiKey;
     }
 
-    Optional<DmsUser> lookupByUsername(String username) {
+    Optional<FinancialUser> lookupByUsername(String username) {
         return getUser("/users/lookup/?username=" + enc(username));
     }
 
-    Optional<DmsUser> lookupByEmail(String email) {
+    Optional<FinancialUser> lookupByEmail(String email) {
         return getUser("/users/lookup/?email=" + enc(email));
     }
 
-    Optional<DmsUser> lookupById(String id) {
+    Optional<FinancialUser> lookupById(String id) {
         return getUser("/users/lookup/?id=" + enc(id));
     }
 
-    List<DmsUser> search(String query, int first, int max) {
+    List<FinancialUser> search(String query, int first, int max) {
         JsonNode root = request(
             "GET",
             "/users/search/?q=" + enc(query == null ? "" : query)
@@ -51,7 +49,7 @@ final class DmsClient {
                 + "&max=" + max,
             null
         );
-        return JSON.convertValue(root.path("results"), new TypeReference<List<DmsUser>>() {});
+        return JSON.convertValue(root.path("results"), new TypeReference<List<FinancialUser>>() {});
     }
 
     int count(String query) {
@@ -63,20 +61,41 @@ final class DmsClient {
         return root.path("count").asInt(0);
     }
 
-    Map<String, Object> authorization(String dmsUserId) {
-        JsonNode root = request("GET", "/users/" + enc(dmsUserId) + "/authorization/", null);
+    boolean validatePassword(String username, String password) {
+        Map<String, Object> body = Map.of("username", username, "password", password);
+        JsonNode root = request("POST", "/users/validate-password/", body);
+        return root.path("valid").asBoolean(false);
+    }
+
+    FinancialUser createUser(String email, String firstName, String lastName, boolean enabled) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("email", email);
+        body.put("first_name", firstName == null ? "" : firstName);
+        body.put("last_name", lastName == null ? "" : lastName);
+        body.put("enabled", enabled);
+        return JSON.convertValue(request("POST", "/users/", body), FinancialUser.class);
+    }
+
+    FinancialUser updateUser(String userId, Map<String, Object> updates) {
+        return JSON.convertValue(request("PATCH", "/users/" + enc(userId) + "/", updates), FinancialUser.class);
+    }
+
+    void setPassword(String userId, String password, boolean temporary) {
+        request("PUT", "/users/" + enc(userId) + "/password/", Map.of(
+            "password", password,
+            "temporary", temporary
+        ));
+    }
+
+    Map<String, Object> authorization(String userId) {
+        JsonNode root = request("GET", "/users/" + enc(userId) + "/authorization/", null);
         return JSON.convertValue(root, new TypeReference<Map<String, Object>>() {});
     }
 
-    Map<String, Object> authorizationByEmail(String email) {
-        JsonNode root = request("GET", "/users/authorization/?email=" + enc(email), null);
-        return JSON.convertValue(root, new TypeReference<Map<String, Object>>() {});
-    }
-
-    private Optional<DmsUser> getUser(String path) {
+    private Optional<FinancialUser> getUser(String path) {
         try {
-            return Optional.of(JSON.convertValue(request("GET", path, null), DmsUser.class));
-        } catch (DmsNotFoundException ignored) {
+            return Optional.of(JSON.convertValue(request("GET", path, null), FinancialUser.class));
+        } catch (FinancialNotFoundException ignored) {
             return Optional.empty();
         }
     }
@@ -98,11 +117,11 @@ final class DmsClient {
 
             HttpResponse<String> response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 404) {
-                throw new DmsNotFoundException();
+                throw new FinancialNotFoundException();
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalStateException(
-                    "DMS internal API returned HTTP " + response.statusCode()
+                    "Financial internal API returned HTTP " + response.statusCode()
                         + " for " + method + " " + path
                         + ": " + response.body()
                 );
@@ -111,16 +130,16 @@ final class DmsClient {
                 return JSON.readTree(response.body());
             } catch (IOException e) {
                 throw new IllegalStateException(
-                    "DMS internal API returned invalid JSON for " + method + " " + path
+                    "Financial internal API returned invalid JSON for " + method + " " + path
                         + ": " + response.body(),
                     e
                 );
             }
         } catch (IOException e) {
-            throw new IllegalStateException("Could not parse DMS internal API response", e);
+            throw new IllegalStateException("Could not parse financial internal API response", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while calling DMS internal API", e);
+            throw new IllegalStateException("Interrupted while calling financial internal API", e);
         }
     }
 
@@ -132,6 +151,6 @@ final class DmsClient {
         return value == null ? "" : value.replaceAll("/+$", "");
     }
 
-    private static final class DmsNotFoundException extends RuntimeException {
+    private static final class FinancialNotFoundException extends RuntimeException {
     }
 }

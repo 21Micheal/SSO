@@ -1,4 +1,4 @@
-package com.flaxem.dms.keycloak;
+package com.flaxem.financial.keycloak;
 
 import java.util.List;
 import org.keycloak.Config;
@@ -8,10 +8,12 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.storage.UserStorageProviderFactory;
 
-public final class DmsUserStorageProviderFactory implements UserStorageProviderFactory<DmsUserStorageProvider> {
-    static final String PROVIDER_ID = "dms-user-storage";
-    static final String CONFIG_BASE_URL = "dmsInternalApiBaseUrl";
-    static final String CONFIG_API_KEY = "dmsInternalApiKey";
+public final class FinancialUserStorageProviderFactory
+    implements UserStorageProviderFactory<FinancialUserStorageProvider> {
+
+    static final String PROVIDER_ID = "financial-user-storage";
+    static final String CONFIG_BASE_URL = "financialInternalApiBaseUrl";
+    static final String CONFIG_API_KEY = "financialInternalApiKey";
 
     @Override
     public String getId() {
@@ -19,26 +21,26 @@ public final class DmsUserStorageProviderFactory implements UserStorageProviderF
     }
 
     @Override
-    public DmsUserStorageProvider create(KeycloakSession session, ComponentModel model) {
-        String baseUrl = configValue(model, CONFIG_BASE_URL, env("DMS_INTERNAL_API_BASE_URL"));
-        String apiKey = configValue(model, CONFIG_API_KEY, env("DMS_INTERNAL_IDP_API_KEY"));
-        return new DmsUserStorageProvider(session, model, new DmsClient(baseUrl, apiKey));
+    public FinancialUserStorageProvider create(KeycloakSession session, ComponentModel model) {
+        String baseUrl = configValue(model, CONFIG_BASE_URL, env("FINANCIAL_INTERNAL_API_BASE_URL"));
+        String apiKey = configValue(model, CONFIG_API_KEY, env("FINANCIAL_INTERNAL_IDP_API_KEY"));
+        return new FinancialUserStorageProvider(session, model, new FinancialClient(baseUrl, apiKey));
     }
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
         ProviderConfigProperty baseUrl = new ProviderConfigProperty();
         baseUrl.setName(CONFIG_BASE_URL);
-        baseUrl.setLabel("DMS internal API base URL");
+        baseUrl.setLabel("Financial internal API base URL");
         baseUrl.setType(ProviderConfigProperty.STRING_TYPE);
-        baseUrl.setDefaultValue("http://backend:8000/api/v1/internal/idp");
-        baseUrl.setHelpText("Base URL for the DMS internal IdP API.");
+        baseUrl.setDefaultValue("http://financial-backend:8001/api/v1/internal/idp");
+        baseUrl.setHelpText("Base URL for the financial-system internal IdP API.");
 
         ProviderConfigProperty apiKey = new ProviderConfigProperty();
         apiKey.setName(CONFIG_API_KEY);
-        apiKey.setLabel("DMS internal API key");
+        apiKey.setLabel("Financial internal API key");
         apiKey.setType(ProviderConfigProperty.PASSWORD);
-        apiKey.setHelpText("Shared bearer secret for the DMS role-only internal API (not identity).");
+        apiKey.setHelpText("Shared bearer secret configured as FINANCIAL_INTERNAL_IDP_API_KEY.");
 
         return List.of(baseUrl, apiKey);
     }

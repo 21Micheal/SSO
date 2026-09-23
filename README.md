@@ -13,11 +13,11 @@ separate OIDC client in the `idp-dev` realm.
 3. [Starting and stopping](#3-starting-and-stopping)
 4. [Admin console](#4-admin-console)
 5. [Browser URL vs internal URL — the split-horizon explanation](#5-browser-url-vs-internal-url)
-6. [DMS-backed users](#6-dms-backed-users)
+6. [Financial-backed users](#6-financial-backed-users)
 7. [Registered OIDC clients](#7-registered-oidc-clients)
 8. [Adding a new client for a future system](#8-adding-a-new-client)
 9. [How to configure a client application](#9-how-to-configure-a-client-application)
-10. [DMS user federation](#10-dms-user-federation)
+10. [User federation](#10-user-federation)
 11. [Backup and restore](#11-backup-and-restore)
 12. [Day-2 operations](#12-day-2-operations)
 13. [Production checklist](#13-production-checklist)
@@ -35,17 +35,19 @@ separate OIDC client in the `idp-dev` realm.
 ## 2. First-time setup
 
 ```bash
-cd ~/Projects/idp
+cd ~/Projects/SSO
 cp .env.example .env
 nano .env          # set KC_BOOTSTRAP_ADMIN_PASSWORD and KC_DB_PASSWORD
 ```
 
 `.env` is gitignored. Never commit it.
 
-For DMS federation, set the same `DMS_INTERNAL_IDP_API_KEY` value in both:
+For financial federation, set the same `FINANCIAL_INTERNAL_IDP_API_KEY` in:
 
-- `~/Projects/idp/.env`
-- `~/Projects/IDM/.env`
+- `~/Projects/SSO/.env`
+- `~/Projects/financial-system/.env`
+
+Use a **separate** `DMS_INTERNAL_IDP_API_KEY` in SSO, IDM, and financial (launcher probe).
 
 - Get it with:
 ```bash
@@ -60,7 +62,7 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 ## 3. Starting and stopping
 
 ```bash
-# Start (detached). The first run also builds the DMS Keycloak provider jar.
+# Start (detached). The first run builds both Keycloak provider jars.
 docker compose up -d --build
 
 # First startup takes ~60 s while Keycloak initialises the database
@@ -68,7 +70,8 @@ docker compose up -d --build
 docker compose logs -f keycloak
 
 # You'll see: "Keycloak 26.0 on JVM (powered by Quarkus) started"
-# then use DMS-created users to sign in through the DMS federation provider.
+# then add financial-user-storage in admin (or reset the volume) and sign in
+# with financial-system users.
 
 # Stop (keeps data in the keycloak_db_data volume)
 docker compose down
@@ -166,23 +169,27 @@ compared (not a network call).
 
 ---
 
-## 6. DMS-backed users
+## 6. Financial-backed users
 
-This realm intentionally does not seed DMS users or DMS roles. Keycloak reads
-users from DMS through the `dms-user-storage` federation provider, and the DMS
-live-authorization mapper emits DMS role metadata as token claims.
+This realm does not seed application users. Keycloak reads identity from the
+**financial system** through the `financial-user-storage` federation provider.
+Passwords, profile write-through, and `financial_role` claims come from
+`http://financial-backend:8001/api/v1/internal/idp`.
 
-Example decoded DMS token claims:
+DMS is a relying party. The `dms-live-authorization-mapper` only loads
+`dms_role` / permissions (by email, because federated users have no `dms_user_id`).
+Do **not** enable `dms-user-storage` as the identity backend.
+
+Example decoded token claims for `financial-client`:
 ```json
 {
   "iss": "http://localhost:8080/realms/idp-dev",
-  "sub": "...",
   "preferred_username": "alice@example.com",
-  "dms_user_id": "...",
-  "dms_role": "dms-user",
-  "dms_permissions": ["view"],
-  "dms_groups": ["Finance"],
-  "dms_admin": false
+  "financial_user_id": "...",
+  "financial_role": "client_user",
+  "financial_permissions": ["finance.read"],
+  "organization_id": "...",
+  "is_staff": false
 }
 ```
 
@@ -193,7 +200,7 @@ Example decoded DMS token claims:
 | Client ID | App | Redirect URIs | Type |
 |---|---|---|---|
 | `dms-client` | Document Management System | `http://localhost:3000/*`, `http://localhost:8000/*` | Public (PKCE) |
-| `financial-client` | Financial System | `http://localhost:3100/*`, `http://localhost:8100/*` | Public (PKCE) |
+| `financial-client` | Financial System | `http://localhost:3001/*`, `http://localhost:8001/*` | Public (PKCE) |
 
 Both clients use **Authorization Code + PKCE** (`pkce.code.challenge.method=S256`).
 No client secret is needed or expected.
@@ -274,82 +281,43 @@ services:
 
 ---
 
-## 10. DMS user federation
+## 10. User federation
 
-Keycloak is configured to authenticate DMS users through a custom provider in
-`providers/dms-keycloak-provider`. DMS remains authoritative for:
+Identity backend: `providers/financial-keycloak-provider` (`financial-user-storage`)
+calls `http://financial-backend:8001/api/v1/internal/idp` with
+`Authorization: Bearer <FINANCIAL_INTERNAL_IDP_API_KEY>`.
 
-- user existence and profile fields
-- password hashes
-- active/deactivated state
-- DMS roles, groups, and permissions
-
-The provider calls the internal DMS API at:
-
-```text
-http://backend:8000/api/v1/internal/idp
-```
-
-All calls use:
-
-```text
-Authorization: Bearer <DMS_INTERNAL_IDP_API_KEY>
-```
+DMS mapper: `providers/dms-keycloak-provider` is **claims-only**. It must not
+validate passwords or create users.
 
 ### Build and deploy
 
-The Dockerfile builds the Maven project and runs `kc.sh build` with the jar in
-`/opt/keycloak/providers`.
+The Dockerfile builds **both** Maven jars and runs `kc.sh build`.
 
 ```bash
-cd ~/Projects/idp
+cd ~/Projects/SSO
 docker compose up -d --build keycloak
 ```
 
-Manual jar build, useful while developing:
+After any SPI change, rebuild the image. Stale Keycloak-local users can shadow
+federation — disable the old DMS user-storage component, add `financial-user-storage`,
+and remove stale local users if lookup looks wrong.
 
-```bash
-cd ~/Projects/idp/providers/dms-keycloak-provider
-mvn -DskipTests package
-```
+### Enable financial-user-storage
 
-### Enable the user federation provider
+Realm import may not attach the SPI until you add it in admin (or reset the volume):
 
-If the realm already exists, add the provider in the Keycloak admin console:
+1. Realm `idp-dev` → User federation → Add provider → `financial-user-storage`.
+2. Base URL `http://financial-backend:8001/api/v1/internal/idp`.
+3. API key = `FINANCIAL_INTERNAL_IDP_API_KEY`.
+4. Disable any existing `dms-user-storage` component.
 
-1. Realm `idp-dev` → User federation → Add provider → `dms-user-storage`.
-2. Set `DMS internal API base URL` to `http://backend:8000/api/v1/internal/idp`.
-3. Set `DMS internal API key` to the same secret used by DMS.
-4. Save, then use Synchronize changed users only if you need Keycloak's admin UI
-   to refresh cached views.
+Creating a user from the Keycloak admin console write-throughs to the financial system.
 
-Creating a user from the Keycloak admin console calls DMS and creates an
-ordinary `dms-user` there. Elevation to DMS admin/platform admin must still be
-done from DMS.
+### Token mappers
 
-If an existing Keycloak database still contains old local DMS users or realm
-roles from the pre-federation setup, remove those local users/roles or reset the
-dev volume with `docker compose down -v` so federated DMS lookup cannot be
-shadowed by stale Keycloak-local records.
-
-### Token mapper
-
-The `dms-client` realm import includes a `dms-live-authorization` protocol
-mapper using provider id `dms-live-authorization-mapper`. It calls DMS during
-token issuance and refresh, then emits:
-
-```json
-{
-  "dms_user_id": "...",
-  "dms_role": "dms-user",
-  "dms_permissions": ["view"],
-  "dms_groups": ["Finance"],
-  "dms_admin": false
-}
-```
-
-DMS should use these only as live token metadata; database checks remain the
-final authorization source.
+- `financial-client`: `financial-live-authorization-mapper` → `financial_role`, `financial_permissions`, `organization_id`.
+- `dms-client`: `dms-live-authorization-mapper` → `dms_role`, `dms_permissions`, `dms_groups` (lookup by email).
 
 ## 11. Backup and restore
 
