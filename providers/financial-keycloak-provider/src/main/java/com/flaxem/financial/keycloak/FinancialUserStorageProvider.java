@@ -143,7 +143,7 @@ public final class FinancialUserStorageProvider implements
 
     @Override
     public boolean removeUser(RealmModel realm, UserModel user) {
-        throw new UnsupportedOperationException("Delete/deactivate users in the financial system.");
+        return false;
     }
 
     @Override
@@ -175,7 +175,6 @@ public final class FinancialUserStorageProvider implements
 
     @Override
     public void disableCredentialType(RealmModel realm, UserModel user, String credentialType) {
-        throw new UnsupportedOperationException("Disable credentials in the financial system.");
     }
 
     @Override

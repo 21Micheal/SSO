@@ -1,5 +1,7 @@
 package com.flaxem.dms.keycloak;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -8,6 +10,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.GroupModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.storage.StorageId;
 import org.keycloak.storage.adapter.AbstractUserAdapterFederatedStorage;
 
@@ -101,7 +104,9 @@ final class DmsUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public Map<String, List<String>> getAttributes() {
-        return Map.of("dms_user_id", List.of(dmsUser.id()));
+        Map<String, List<String>> attributes = new HashMap<>(super.getAttributes());
+        attributes.put("dms_user_id", new ArrayList<>(List.of(dmsUser.id())));
+        return attributes;
     }
 
     @Override

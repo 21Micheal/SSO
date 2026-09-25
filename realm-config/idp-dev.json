@@ -9,7 +9,7 @@
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
-  "bruteForceProtected": false,
+  "bruteForceProtected": true,
   "rememberMe": true,
   "accessTokenLifespan": 300,
   "accessTokenLifespanForImplicitFlow": 900,
@@ -21,14 +21,20 @@
   "roles": {
     "realm": [
       {
-        "name": "financial-user",
-        "description": "Can access the Financial System",
+        "name": "platform_admin",
+        "description": "Platform Administrator - full system access",
         "composite": false,
         "clientRole": false
       },
       {
-        "name": "financial-admin",
-        "description": "Can manage users and settings in the Financial System",
+        "name": "admin",
+        "description": "Administrator - organization management",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "name": "financial_user",
+        "description": "Financial User - standard access",
         "composite": false,
         "clientRole": false
       }
@@ -96,7 +102,7 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:3001/*##http://localhost:8001/*"
+        "post.logout.redirect.uris": "http://localhost:3001/login##http://localhost:8001/login"
       },
       "protocolMappers": [
         {
@@ -115,6 +121,54 @@
   ],
 
   "users": [],
+  "identityProviders": [
+    {
+      "alias": "microsoft",
+      "providerId": "microsoft",
+      "enabled": false,
+      "updateProfileFirstLogin": false,
+      "trustEmail": false,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "",
+        "clientSecret": "",
+        "tenantId": "",
+        "useJwksUrl": "true"
+      }
+    }
+  ],
+  "components": {
+    "org.keycloak.storage.UserStorageProvider": [
+      {
+        "id": "financial-user-storage",
+        "name": "financial-user-storage",
+        "providerId": "financial-user-storage",
+        "subType": "read-write",
+        "config": {
+          "priority": ["0"],
+          "enabled": ["true"],
+          "cachePolicy": ["NO_CACHE"],
+          "financialInternalApiBaseUrl": [""],
+          "financialInternalApiKey": [""]
+        }
+      },
+      {
+        "id": "dms-user-storage",
+        "name": "dms-user-storage",
+        "providerId": "dms-user-storage",
+        "subType": "read-only",
+        "config": {
+          "priority": ["1"],
+          "enabled": ["true"],
+          "cachePolicy": ["NO_CACHE"],
+          "dmsInternalApiBaseUrl": [""],
+          "dmsInternalApiKey": [""]
+        }
+      }
+    ]
+  },
   "browserSecurityHeaders": {
     "contentSecurityPolicyReportOnly": "",
     "contentSecurityPolicy": "",
@@ -138,7 +192,7 @@
       "alias": "UPDATE_PASSWORD",
       "name": "Update Password",
       "providerId": "UPDATE_PASSWORD",
-      "enabled": false,
+      "enabled": true,
       "defaultAction": false,
       "priority": 0,
       "config": {}

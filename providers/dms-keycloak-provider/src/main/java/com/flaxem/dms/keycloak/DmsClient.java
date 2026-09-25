@@ -17,18 +17,21 @@ import java.util.Optional;
 
 /**
  * Claims-only client. Identity (passwords, user creation) lives in the financial system.
+ *
+ * One HttpClient is shared for the whole JVM; instances only hold base URL + key.
  */
 final class DmsClient {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(3))
+        .build();
 
-    private final HttpClient http;
     private final String baseUrl;
     private final String apiKey;
 
     DmsClient(String baseUrl, String apiKey) {
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
         this.baseUrl = stripTrailingSlash(baseUrl);
-        this.apiKey = apiKey;
+        this.apiKey = apiKey == null ? "" : apiKey;
     }
 
     Optional<DmsUser> lookupByUsername(String username) {
@@ -63,11 +66,13 @@ final class DmsClient {
         return root.path("count").asInt(0);
     }
 
+    /** @throws DmsNotFoundException if DMS has no such user (HTTP 404). */
     Map<String, Object> authorization(String dmsUserId) {
         JsonNode root = request("GET", "/users/" + enc(dmsUserId) + "/authorization/", null);
         return JSON.convertValue(root, new TypeReference<Map<String, Object>>() {});
     }
 
+    /** @throws DmsNotFoundException if DMS has no such user (HTTP 404). */
     Map<String, Object> authorizationByEmail(String email) {
         JsonNode root = request("GET", "/users/authorization/?email=" + enc(email), null);
         return JSON.convertValue(root, new TypeReference<Map<String, Object>>() {});
@@ -96,28 +101,26 @@ final class DmsClient {
                 builder.method(method, HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
             }
 
-            HttpResponse<String> response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = HTTP.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 404) {
                 throw new DmsNotFoundException();
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                // Status only: never echo the body (it may contain user data).
                 throw new IllegalStateException(
                     "DMS internal API returned HTTP " + response.statusCode()
                         + " for " + method + " " + path
-                        + ": " + response.body()
                 );
             }
             try {
                 return JSON.readTree(response.body());
             } catch (IOException e) {
                 throw new IllegalStateException(
-                    "DMS internal API returned invalid JSON for " + method + " " + path
-                        + ": " + response.body(),
-                    e
+                    "DMS internal API returned invalid JSON for " + method + " " + path, e
                 );
             }
         } catch (IOException e) {
-            throw new IllegalStateException("Could not parse DMS internal API response", e);
+            throw new IllegalStateException("Could not call the DMS internal API: " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while calling DMS internal API", e);
@@ -132,6 +135,7 @@ final class DmsClient {
         return value == null ? "" : value.replaceAll("/+$", "");
     }
 
-    private static final class DmsNotFoundException extends RuntimeException {
+    /** DMS answered 404. Package-private so the mapper can tell "not provisioned" from "broken". */
+    static final class DmsNotFoundException extends RuntimeException {
     }
 }

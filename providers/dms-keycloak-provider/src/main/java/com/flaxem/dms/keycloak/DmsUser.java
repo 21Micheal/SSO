@@ -11,7 +11,13 @@ public record DmsUser(
     String first_name,
     String last_name,
     boolean enabled,
-    boolean email_verified
+    boolean email_verified,
+    boolean must_change_password,
+    boolean has_usable_password,
+    String role,
+    String organization_id,
+    boolean is_staff,
+    boolean is_superuser
 ) {
     public String firstName() {
         return first_name == null ? "" : first_name;

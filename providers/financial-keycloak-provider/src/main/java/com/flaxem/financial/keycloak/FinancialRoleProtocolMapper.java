@@ -1,8 +1,11 @@
 package com.flaxem.financial.keycloak;
 
+import jakarta.ws.rs.core.Response;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.jboss.logging.Logger;
+import org.keycloak.OAuthErrorException;
 import org.keycloak.models.ClientSessionContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ProtocolMapperModel;
@@ -14,10 +17,12 @@ import org.keycloak.protocol.oidc.mappers.OIDCIDTokenMapper;
 import org.keycloak.protocol.oidc.mappers.UserInfoTokenMapper;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.representations.IDToken;
+import org.keycloak.services.ErrorResponseException;
 
 public final class FinancialRoleProtocolMapper extends AbstractOIDCProtocolMapper
     implements OIDCAccessTokenMapper, OIDCIDTokenMapper, UserInfoTokenMapper {
 
+    private static final Logger LOG = Logger.getLogger(FinancialRoleProtocolMapper.class);
     public static final String PROVIDER_ID = "financial-live-authorization-mapper";
     private static final String CONFIG_BASE_URL = "financialInternalApiBaseUrl";
     private static final String CONFIG_API_KEY = "financialInternalApiKey";
@@ -78,12 +83,36 @@ public final class FinancialRoleProtocolMapper extends AbstractOIDCProtocolMappe
     ) {
         String financialUserId = userSession.getUser().getFirstAttribute("financial_user_id");
         if (financialUserId == null || financialUserId.isBlank()) {
+            LOG.debugf("User %s has no financial_user_id attribute; skipping financial claims.",
+                userSession.getUser().getId());
             return;
         }
 
         String baseUrl = configValue(mappingModel, CONFIG_BASE_URL, env("FINANCIAL_INTERNAL_API_BASE_URL"));
         String apiKey = configValue(mappingModel, CONFIG_API_KEY, env("FINANCIAL_INTERNAL_IDP_API_KEY"));
-        Map<String, Object> authz = new FinancialClient(baseUrl, apiKey).authorization(financialUserId);
+        Map<String, Object> authz;
+        try {
+            authz = new FinancialClient(baseUrl, apiKey).authorization(financialUserId);
+        } catch (RuntimeException e) {
+            LOG.errorf(e, "Financial authorization lookup failed for user %s; refusing to issue token.",
+                userSession.getUser().getId());
+            throw new ErrorResponseException(
+                OAuthErrorException.SERVER_ERROR,
+                "Could not load authorization from financial system.",
+                Response.Status.SERVICE_UNAVAILABLE
+            );
+        }
+
+        Boolean enabled = (Boolean) authz.get("enabled");
+        if (enabled == null || !enabled) {
+            LOG.warnf("User %s (financial_user_id=%s) is disabled; refusing to issue token.",
+                userSession.getUser().getId(), financialUserId);
+            throw new ErrorResponseException(
+                OAuthErrorException.ACCESS_DENIED,
+                "Financial user is disabled.",
+                Response.Status.FORBIDDEN
+            );
+        }
 
         token.getOtherClaims().put("financial_user_id", financialUserId);
         token.getOtherClaims().put("financial_role", authz.get("financial_role"));

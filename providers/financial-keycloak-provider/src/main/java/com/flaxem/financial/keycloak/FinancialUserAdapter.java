@@ -1,5 +1,7 @@
 package com.flaxem.financial.keycloak;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -7,7 +9,7 @@ import org.keycloak.component.ComponentModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
-import org.keycloak.models.GroupModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.storage.StorageId;
 import org.keycloak.storage.adapter.AbstractUserAdapterFederatedStorage;
 
@@ -64,7 +66,15 @@ final class FinancialUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setEmail(String email) {
-        FinancialUser updated = financial.updateUser(financialUser.id(), Map.of("email", email));
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email cannot be blank.");
+        }
+        if (email.equals(this.email)) {
+            return;
+        }
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("email", email);
+        FinancialUser updated = financial.updateUser(financialUser.id(), updates);
         this.email = updated.email();
         this.username = updated.username();
     }
@@ -76,10 +86,13 @@ final class FinancialUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setFirstName(String firstName) {
-        FinancialUser updated = financial.updateUser(
-            financialUser.id(),
-            Map.of("first_name", firstName == null ? "" : firstName)
-        );
+        firstName = firstName == null ? "" : firstName;
+        if (firstName.equals(this.firstName)) {
+            return;
+        }
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("first_name", firstName);
+        FinancialUser updated = financial.updateUser(financialUser.id(), updates);
         this.firstName = updated.firstName();
     }
 
@@ -90,10 +103,13 @@ final class FinancialUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setLastName(String lastName) {
-        FinancialUser updated = financial.updateUser(
-            financialUser.id(),
-            Map.of("last_name", lastName == null ? "" : lastName)
-        );
+        lastName = lastName == null ? "" : lastName;
+        if (lastName.equals(this.lastName)) {
+            return;
+        }
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("last_name", lastName);
+        FinancialUser updated = financial.updateUser(financialUser.id(), updates);
         this.lastName = updated.lastName();
     }
 
@@ -104,7 +120,12 @@ final class FinancialUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public void setEnabled(boolean enabled) {
-        FinancialUser updated = financial.updateUser(financialUser.id(), Map.of("enabled", enabled));
+        if (enabled == this.enabled) {
+            return;
+        }
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("enabled", enabled);
+        FinancialUser updated = financial.updateUser(financialUser.id(), updates);
         this.enabled = updated.enabled();
     }
 
@@ -131,21 +152,23 @@ final class FinancialUserAdapter extends AbstractUserAdapterFederatedStorage {
 
     @Override
     public Map<String, List<String>> getAttributes() {
-        return Map.of("financial_user_id", List.of(financialUser.id()));
+        Map<String, List<String>> attributes = new HashMap<>(super.getAttributes());
+        attributes.put("financial_user_id", new ArrayList<>(List.of(financialUser.id())));
+        return attributes;
     }
 
     @Override
     public Stream<String> getRequiredActionsStream() {
-        return Stream.empty();
-    }
-
-    @Override
-    public Stream<GroupModel> getGroupsStream() {
-        return Stream.empty();
+        return financialUser.mustChangePassword()
+            ? Stream.of(UserModel.RequiredAction.UPDATE_PASSWORD.name())
+            : Stream.empty();
     }
 
     @Override
     public Stream<RoleModel> getRoleMappingsStream() {
-        return Stream.empty();
+        // Preserve default realm roles by delegating to the base class.
+        // The financial-user and financial-admin roles from the realm JSON
+        // are not assigned here; they must be managed via the Keycloak admin console.
+        return super.getRoleMappingsStream();
     }
 }

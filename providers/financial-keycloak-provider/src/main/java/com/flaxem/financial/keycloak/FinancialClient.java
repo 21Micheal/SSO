@@ -18,15 +18,16 @@ import java.util.Optional;
 
 final class FinancialClient {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(3))
+        .build();
 
-    private final HttpClient http;
     private final String baseUrl;
     private final String apiKey;
 
     FinancialClient(String baseUrl, String apiKey) {
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
         this.baseUrl = stripTrailingSlash(baseUrl);
-        this.apiKey = apiKey;
+        this.apiKey = apiKey == null ? "" : apiKey;
     }
 
     Optional<FinancialUser> lookupByUsername(String username) {
@@ -62,7 +63,9 @@ final class FinancialClient {
     }
 
     boolean validatePassword(String username, String password) {
-        Map<String, Object> body = Map.of("username", username, "password", password);
+        Map<String, Object> body = new HashMap<>();
+        body.put("username", username);
+        body.put("password", password);
         JsonNode root = request("POST", "/users/validate-password/", body);
         return root.path("valid").asBoolean(false);
     }
@@ -81,10 +84,10 @@ final class FinancialClient {
     }
 
     void setPassword(String userId, String password, boolean temporary) {
-        request("PUT", "/users/" + enc(userId) + "/password/", Map.of(
-            "password", password,
-            "temporary", temporary
-        ));
+        Map<String, Object> body = new HashMap<>();
+        body.put("password", password);
+        body.put("temporary", temporary);
+        request("PUT", "/users/" + enc(userId) + "/password/", body);
     }
 
     Map<String, Object> authorization(String userId) {
@@ -115,7 +118,7 @@ final class FinancialClient {
                 builder.method(method, HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)));
             }
 
-            HttpResponse<String> response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = HTTP.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 404) {
                 throw new FinancialNotFoundException();
             }

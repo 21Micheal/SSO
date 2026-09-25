@@ -52,26 +52,26 @@ public final class DmsUserStorageProvider implements
 
     @Override
     public int getUsersCount(RealmModel realm) {
-        return 0;
+        return dms.count("");
     }
 
     @Override
     public int getUsersCount(RealmModel realm, boolean includeServiceAccount) {
-        return 0;
+        return getUsersCount(realm);
     }
 
     @Override
     public int getUsersCount(RealmModel realm, String search) {
-        return 0;
+        return dms.count(search);
     }
 
     @Override
     public int getUsersCount(RealmModel realm, Map<String, String> params) {
-        return 0;
+        return dms.count(params.getOrDefault(UserModel.SEARCH, ""));
     }
 
     public Stream<UserModel> getUsersStream(RealmModel realm, Integer firstResult, Integer maxResults) {
-        return Stream.empty();
+        return searchForUserStream(realm, "", firstResult, maxResults);
     }
 
     @Override
@@ -81,7 +81,14 @@ public final class DmsUserStorageProvider implements
         Integer firstResult,
         Integer maxResults
     ) {
-        return Stream.empty();
+        int first = firstResult == null ? 0 : firstResult;
+        int max = maxResults == null ? 20 : maxResults;
+        try {
+            return dms.search(search, first, max).stream().map(user -> adapter(realm, user));
+        } catch (RuntimeException exc) {
+            // Log error but don't propagate - DMS is optional for identity
+            return Stream.empty();
+        }
     }
 
     @Override
